@@ -1,0 +1,20 @@
+spring:
+  application:
+    name: enterprise-ai-blueprint
+
+  ai:
+    openai:
+      api-key: ${MINIMAX_API_KEY:}
+      base-url: https://api.minimaxi.com/v1
+      chat:
+        options:
+          model: MiniMax-M2.7
+          temperature: 0.7
+
+server:
+  port: 8080
+
+logging:
+  level:
+    org.springframework.ai: INFO
+    io.github.mars.blueprint: DEBUG
