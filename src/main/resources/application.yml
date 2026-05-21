@@ -2,14 +2,26 @@ spring:
   application:
     name: enterprise-ai-blueprint
 
+  autoconfigure:
+    exclude:
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiAudioSpeechAutoConfiguration
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiAudioTranscriptionAutoConfiguration
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiImageAutoConfiguration
+      - org.springframework.ai.model.openai.autoconfigure.OpenAiModerationAutoConfiguration
+
   ai:
     openai:
-      api-key: ${MINIMAX_API_KEY:}
-      base-url: https://api.minimaxi.com/v1
       chat:
+        api-key: ${MINIMAX_API_KEY:}
+        base-url: https://api.minimaxi.com
         options:
           model: MiniMax-M2.7
           temperature: 0.7
+      embedding:
+        api-key: ${DASHSCOPE_API_KEY:}
+        base-url: https://dashscope.aliyuncs.com/compatible-mode
+        options:
+          model: text-embedding-v3
 
 server:
   port: 8080
