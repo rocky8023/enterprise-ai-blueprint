@@ -34,6 +34,23 @@ blueprint:
 server:
   port: 8080
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info
+  endpoint:
+    health:
+      show-details: when-authorized
+  info:
+    env:
+      enabled: true
+
+info:
+  app:
+    name: enterprise-ai-blueprint
+    description: 企业级 AI 应用工程化参考实现 · Built with Spring AI
+
 logging:
   level:
     org.springframework.ai: INFO

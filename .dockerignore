@@ -1,0 +1,42 @@
+# Build artifacts
+target/
+*.jar
+*.war
+*.log
+
+# IDE
+.idea/
+.vscode/
+*.iml
+.classpath
+.project
+.settings/
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Maven wrapper jar (regenerated)
+.mvn/wrapper/maven-wrapper.jar
+
+# Docs (打镜像不需要)
+README.md
+HELP.md
+
+# Docker 自身
+Dockerfile
+.dockerignore
+docker-compose.yml
+docker-compose.*.yml
+
+# Secrets / local config (绝不进镜像)
+.env
+.env.local
+.env.*.local
+application-local.yml
+application-*.local.yml
+compose.env
+
+# macOS
+.DS_Store
