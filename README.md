@@ -37,9 +37,9 @@
 ### 前置
 
 - Docker Desktop（macOS / Windows / Linux 都行）
-- 两个国产模型 API Key：
-  - [MiniMax](https://platform.minimaxi.com/) — 用于 chat（推荐 `MiniMax-M2.7`）
-  - [阿里通义 DashScope](https://bailian.console.aliyun.com/) — 用于 embedding（`text-embedding-v3`，几乎免费）
+- **任意一对 OpenAI 兼容的 chat + embedding API Key**——本项目**不绑死任何厂商**，下文给出默认 + 多组替代方案：
+  - **默认（最便宜，国内可直连）**：[MiniMax](https://platform.minimaxi.com/) chat + [阿里通义 DashScope](https://bailian.console.aliyun.com/) embedding
+  - 替代：DeepSeek、智谱 GLM、月之暗面 Kimi、OpenAI 等任意 OpenAI 兼容厂商（见下文 [切换厂商](#切换-chat--embedding-厂商)）
 
 ### 一行启动
 
@@ -47,7 +47,7 @@
 git clone https://github.com/rocky8023/enterprise-ai-blueprint.git
 cd enterprise-ai-blueprint
 cp compose.env.example .env
-# 编辑 .env 填入你的两个 key
+# 编辑 .env，至少填入 BLUEPRINT_CHAT_API_KEY 和 BLUEPRINT_EMBEDDING_API_KEY
 docker-compose up --build
 ```
 
@@ -68,6 +68,31 @@ curl -G "http://localhost:8080/api/rag/ask" \
   --data-urlencode "q=年假怎么算" \
   --data-urlencode "promptVersion=v2"
 ```
+
+### 切换 chat / embedding 厂商
+
+**不需要改代码、不需要重新构建镜像，只改 `.env` 三个变量**：
+
+```bash
+# === 用 DeepSeek 做 chat（embedding 保持 DashScope）===
+BLUEPRINT_CHAT_API_KEY=sk-xxx
+BLUEPRINT_CHAT_BASE_URL=https://api.deepseek.com
+BLUEPRINT_CHAT_MODEL=deepseek-chat
+
+# === 用 OpenAI 做 chat（如果你能翻墙）===
+BLUEPRINT_CHAT_API_KEY=sk-xxx
+BLUEPRINT_CHAT_BASE_URL=https://api.openai.com
+BLUEPRINT_CHAT_MODEL=gpt-4o-mini
+
+# === 用智谱 GLM 做 chat ===
+BLUEPRINT_CHAT_API_KEY=xxx
+BLUEPRINT_CHAT_BASE_URL=https://open.bigmodel.cn/api/paas/v4
+BLUEPRINT_CHAT_MODEL=glm-4.5
+```
+
+完整厂商列表 + embedding 切换示例见 [`compose.env.example`](compose.env.example)。
+
+> 💡 **原理**：所有变量最终注入到 Spring AI 的 `spring.ai.openai.{chat,embedding}.{api-key,base-url,options.model}`，只要厂商提供 OpenAI 兼容接口就能跑。这就是 "多模型聚合" 的最朴素形态——**配置即聚合**。
 
 ---
 

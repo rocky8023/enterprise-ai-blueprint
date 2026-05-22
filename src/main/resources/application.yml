@@ -12,16 +12,16 @@ spring:
   ai:
     openai:
       chat:
-        api-key: ${MINIMAX_API_KEY:}
-        base-url: https://api.minimaxi.com
+        api-key: ${BLUEPRINT_CHAT_API_KEY:}
+        base-url: ${BLUEPRINT_CHAT_BASE_URL:https://api.minimaxi.com}
         options:
-          model: MiniMax-M2.7
+          model: ${BLUEPRINT_CHAT_MODEL:MiniMax-M2.7}
           temperature: 0.7
       embedding:
-        api-key: ${DASHSCOPE_API_KEY:}
-        base-url: https://dashscope.aliyuncs.com/compatible-mode
+        api-key: ${BLUEPRINT_EMBEDDING_API_KEY:}
+        base-url: ${BLUEPRINT_EMBEDDING_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode}
         options:
-          model: text-embedding-v3
+          model: ${BLUEPRINT_EMBEDDING_MODEL:text-embedding-v3}
 
 blueprint:
   prompts:
