@@ -1,5 +1,9 @@
 package io.github.mars.blueprint.rag;
 
+import io.github.mars.blueprint.prompt.PromptDefinition;
+import io.github.mars.blueprint.prompt.PromptRegistry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
@@ -8,43 +12,39 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Service
 public class RagService {
 
+    private static final Logger log = LoggerFactory.getLogger(RagService.class);
+    private static final String PROMPT_KEY = "rag.company-qa";
     private static final Pattern THINK_BLOCK = Pattern.compile("<think>.*?</think>", Pattern.DOTALL);
-
-    private static final String PROMPT_TEMPLATE = """
-            你是企业知识助手。请严格基于下方【知识库】内容回答【用户问题】。
-
-            规则：
-            1. 答案必须来自知识库内容，禁止编造
-            2. 如果知识库不足以回答，明确说"知识库中没有相关信息"
-            3. 引用知识时尽量带上来源文件名
-            4. 回答简洁、条理化
-
-            【知识库】
-            %s
-
-            【用户问题】
-            %s
-            """;
 
     private final VectorStore vectorStore;
     private final ChatClient chatClient;
+    private final PromptRegistry promptRegistry;
     private final int topK;
 
     public RagService(VectorStore vectorStore,
                       ChatClient chatClient,
+                      PromptRegistry promptRegistry,
                       @Value("${blueprint.rag.top-k:4}") int topK) {
         this.vectorStore = vectorStore;
         this.chatClient = chatClient;
+        this.promptRegistry = promptRegistry;
         this.topK = topK;
     }
 
     public RagAnswer ask(String question) {
+        return ask(question, null);
+    }
+
+    public RagAnswer ask(String question, String promptVersion) {
+        PromptDefinition promptDef = promptRegistry.get(PROMPT_KEY, promptVersion);
+
         List<Document> hits = vectorStore.similaritySearch(
                 SearchRequest.builder().query(question).topK(topK).build());
 
@@ -52,7 +52,10 @@ public class RagService {
                 .map(d -> "【来源：" + d.getMetadata().get("source") + "】\n" + d.getText())
                 .collect(Collectors.joining("\n\n---\n\n"));
 
-        String prompt = PROMPT_TEMPLATE.formatted(context, question);
+        String prompt = promptDef.render(Map.of("context", context, "question", question));
+
+        log.info("RAG 调用: prompt={}, question={}", promptDef.fullId(), question);
+
         String rawAnswer = chatClient.prompt(prompt).call().content();
         String answer = stripThinking(rawAnswer);
 
@@ -62,7 +65,7 @@ public class RagService {
                         preview(d.getText())))
                 .toList();
 
-        return new RagAnswer(answer, sources);
+        return new RagAnswer(answer, promptDef.fullId(), sources);
     }
 
     private static String stripThinking(String text) {
@@ -79,6 +82,6 @@ public class RagService {
         return text.length() > 80 ? text.substring(0, 80) + "..." : text;
     }
 
-    public record RagAnswer(String answer, List<Source> sources) {}
+    public record RagAnswer(String answer, String promptUsed, List<Source> sources) {}
     public record Source(String filename, String preview) {}
 }

@@ -23,6 +23,14 @@ spring:
         options:
           model: text-embedding-v3
 
+blueprint:
+  prompts:
+    location: classpath:prompts/*.md
+    active:
+      rag.company-qa: v1
+  rag:
+    top-k: 4
+
 server:
   port: 8080
 
