@@ -71,28 +71,33 @@ curl -G "http://localhost:8080/api/rag/ask" \
 
 ### 切换 chat / embedding 厂商
 
-**不需要改代码、不需要重新构建镜像，只改 `.env` 三个变量**：
+**不改代码、不重建镜像、不查文档记 URL —— 改一个名字**：
 
 ```bash
-# === 用 DeepSeek 做 chat（embedding 保持 DashScope）===
+# === 切 chat 到 DeepSeek（embedding 保持 DashScope）===
 BLUEPRINT_CHAT_API_KEY=sk-xxx
-BLUEPRINT_CHAT_BASE_URL=https://api.deepseek.com
-BLUEPRINT_CHAT_MODEL=deepseek-chat
+BLUEPRINT_CHAT_PRESET=deepseek
 
-# === 用 OpenAI 做 chat（如果你能翻墙）===
-BLUEPRINT_CHAT_API_KEY=sk-xxx
-BLUEPRINT_CHAT_BASE_URL=https://api.openai.com
-BLUEPRINT_CHAT_MODEL=gpt-4o-mini
-
-# === 用智谱 GLM 做 chat ===
+# === 切 chat 到智谱 GLM ===
 BLUEPRINT_CHAT_API_KEY=xxx
-BLUEPRINT_CHAT_BASE_URL=https://open.bigmodel.cn/api/paas/v4
-BLUEPRINT_CHAT_MODEL=glm-4.5
+BLUEPRINT_CHAT_PRESET=glm
+
+# === 切 chat + embedding 都到 OpenAI（需翻墙）===
+BLUEPRINT_CHAT_API_KEY=sk-xxx
+BLUEPRINT_EMBEDDING_API_KEY=sk-xxx
+BLUEPRINT_CHAT_PRESET=openai
+BLUEPRINT_EMBEDDING_PRESET=openai
 ```
 
-完整厂商列表 + embedding 切换示例见 [`compose.env.example`](compose.env.example)。
+内置 preset：**minimax / dashscope / deepseek / glm / kimi / openai**。要列出所有可用 preset：
 
-> 💡 **原理**：所有变量最终注入到 Spring AI 的 `spring.ai.openai.{chat,embedding}.{api-key,base-url,options.model}`，只要厂商提供 OpenAI 兼容接口就能跑。这就是 "多模型聚合" 的最朴素形态——**配置即聚合**。
+```bash
+curl http://localhost:8080/api/providers | jq .
+```
+
+完整 preset 列表 + 自定义示例（内网代理、同厂商换便宜版本等）见 [`compose.env.example`](compose.env.example)。
+
+> 💡 **原理**：`BLUEPRINT_*_PRESET` 在 Spring 启动早期由 `ProviderPresetEnvironmentPostProcessor` 解析为具体的 `base-url / model / temperature`，再注入到 `spring.ai.openai.{chat,embedding}.*`。**preset 字典在 [`providers.yml`](src/main/resources/providers.yml)，用户可在自己的 `application.yml` 中追加内网厂商。** 这就是 "多模型聚合" 的工程化形态——**配置即聚合**。
 
 ---
 
@@ -127,33 +132,57 @@ flowchart LR
 | `rag/` | RAG 业务编排（检索 + Prompt 注入 + 生成） |
 | `prompt/` | Prompt 注册表、模板定义、元数据解析 |
 | `config/` | Spring Bean 装配（VectorStore、ChatClient） |
-| `infra/llm/` | 多模型聚合层（v1.0 通过 Spring AI YAML 配置实现，v1.1 抽象统一接口） |
+| `infra/llm/` | 多模型聚合层：Preset 字典 + `EnvironmentPostProcessor` 把"厂商别名"解析为 `spring.ai.openai.*` 具体值（v1.1 第一阶段完成；v1.1 第二阶段抽象统一接口） |
 
 ---
 
 ## 核心特性逐条
 
-### 1. 多模型聚合（纯 YAML）
+### 1. 多模型聚合（Preset 字典 + EnvironmentPostProcessor）
 
-Spring AI 的 OpenAI client `chat` 和 `embedding` 配置**可独立**，继承自同一个父类。所以你可以：
+Spring AI 的 OpenAI client `chat` 和 `embedding` 配置**可独立**，继承自同一个父类。这是基础能力，本项目在它之上再加一层 **Preset 字典**，把"知道每家厂商的 base-url"这件事从用户脑子里搬到代码仓库里。
 
 ```yaml
-spring:
-  ai:
-    openai:
-      chat:
-        api-key: ${MINIMAX_API_KEY:}
+# providers.yml —— 仓库自带的厂商字典
+blueprint:
+  provider:
+    providers:
+      minimax:
         base-url: https://api.minimaxi.com
-        options:
-          model: MiniMax-M2.7
-      embedding:
-        api-key: ${DASHSCOPE_API_KEY:}
+        chat-model: MiniMax-M2.7
+        chat-temperature: 0.7
+      deepseek:
+        base-url: https://api.deepseek.com
+        chat-model: deepseek-chat
+      dashscope:
         base-url: https://dashscope.aliyuncs.com/compatible-mode
-        options:
-          model: text-embedding-v3
+        embedding-model: text-embedding-v3
+      # ... glm / kimi / openai
 ```
 
-**零 Java 代码，纯配置就实现"chat 一家、embedding 另一家"**。这是 Spring AI 被低估的能力。
+切厂商：
+
+```bash
+BLUEPRINT_CHAT_PRESET=deepseek          # 一个名字搞定
+# 或显式覆盖 preset 中的字段：
+BLUEPRINT_CHAT_PRESET=minimax
+BLUEPRINT_CHAT_MODEL=MiniMax-Text-01     # 同一家换更便宜的模型
+```
+
+底层实现：`ProviderPresetEnvironmentPostProcessor`（`infra/llm/`）在 Spring 启动早期、`OpenAiAutoConfiguration` 绑定 properties **之前**，把 preset 解析为 `spring.ai.openai.chat.base-url` 等具体值并注入 Environment。这是为什么不需要重启 / 不需要重建镜像就能切厂商。
+
+**用户可在自己的 `application.yml` 中追加 preset**（合并行为，不需要 fork providers.yml）：
+
+```yaml
+blueprint:
+  provider:
+    providers:
+      intra-proxy:           # 公司内网 LLM 代理
+        base-url: https://llm.intra.example.com
+        chat-model: qwen2.5-72b
+```
+
+未知 preset 名直接 fail-fast，错误信息附带可用 preset 列表 —— 配置错误不留运行时谜团。
 
 ### 2. Prompt 即代码（frontmatter 元数据）
 
@@ -234,6 +263,8 @@ docker-compose up
 6. **灰度发布 = 一行 SPRING_PROFILES_ACTIVE**：不用引入 feature flag 系统
 7. **Docker multi-stage + 依赖缓存层**：单纯 multi-stage 还不够，必须把 `pom.xml` 单独 copy 一次跑 `dependency:go-offline`，否则改一行代码也要重新下 Maven 依赖
 8. **非 root + healthcheck 是企业级容器基线**：交付给政企客户的镜像不带这两个会被打回
+9. **docker-compose 不要把可选变量"显式但空"传进容器**：`${VAR:-}` 会把未设置的变量传成空字符串 → Spring 的 `${VAR:default}` 不会 fallback（已定义但为空）→ Spring AI OpenAI client 看到 base-url=空 → fallback 到 `api.openai.com` 默认值 → 你的国产 key 发给 OpenAI → 401。正确做法：用 `env_file:` 让 .env "有什么传什么"
+10. **Spring Boot 3 的 SPI 注册分两套，别用错**：`META-INF/spring/...AutoConfiguration.imports` **只对 `AutoConfiguration` 生效**；`EnvironmentPostProcessor` 仍然必须用老的 `META-INF/spring.factories`。混用的代价是：你的 EPP 写得再对，Spring 根本不会加载它，启动表现成"就像这段代码不存在"——本项目的 `ProviderPresetEnvironmentPostProcessor` 第一次提交就踩进这个坑
 
 每个坑会在公众号 [**第二曲线成长**](#关于作者) 出一篇深度拆解。
 
@@ -242,9 +273,10 @@ docker-compose up
 ## Roadmap
 
 ### v1.1（接下来）
+- [x] **Preset 字典 + EnvironmentPostProcessor**：`infra/llm/` 第一阶段，切厂商 = 改一个名字（见上方 [核心特性 #1](#1-多模型聚合preset-字典--environmentpostprocessor)）
+- [ ] **`infra/llm/` 统一接口抽象（第二阶段）**：把 ChatClient / EmbeddingModel 包到自家接口下，运行时按 preset 动态选实例（chat 也能在请求维度切换）
 - [ ] **评测框架**：自动跑 prompt 的 `examples`，回归测试 prompt 修改对效果的影响
 - [ ] **可观测性增强**：调用链 trace（每次调用的 prompt 全文 + 变量 + 耗时 + token + 厂商成本）
-- [ ] **真正的多模型聚合层**：`infra/llm/` 抽象统一接口，chat 也能多厂商动态切换（不止 chat/embedding 分家）
 
 ### v1.2（看反馈）
 - [ ] 向量库替换为 PGVector / Milvus（演示生产级向量存储切换）

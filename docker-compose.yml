@@ -7,13 +7,16 @@ services:
     container_name: enterprise-ai-blueprint
     ports:
       - "8080:8080"
+    # env_file 把 .env 里所有变量"有什么传什么"传给容器
+    # 关键：未在 .env 中设置的可选变量（如 BLUEPRINT_CHAT_BASE_URL）不会被传成空字符串，
+    # 否则会触发 Spring placeholder 的"空值不 fallback"陷阱，让 base-url 被 OpenAI 默认值覆盖
+    env_file:
+      - .env
     environment:
+      # 必填校验：缺失则 docker-compose 启动前就报错
       BLUEPRINT_CHAT_API_KEY: ${BLUEPRINT_CHAT_API_KEY:?BLUEPRINT_CHAT_API_KEY is required}
-      BLUEPRINT_CHAT_BASE_URL: ${BLUEPRINT_CHAT_BASE_URL:-}
-      BLUEPRINT_CHAT_MODEL: ${BLUEPRINT_CHAT_MODEL:-}
       BLUEPRINT_EMBEDDING_API_KEY: ${BLUEPRINT_EMBEDDING_API_KEY:?BLUEPRINT_EMBEDDING_API_KEY is required}
-      BLUEPRINT_EMBEDDING_BASE_URL: ${BLUEPRINT_EMBEDDING_BASE_URL:-}
-      BLUEPRINT_EMBEDDING_MODEL: ${BLUEPRINT_EMBEDDING_MODEL:-}
+      # 系统级
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
       TZ: Asia/Shanghai
     restart: unless-stopped

@@ -2,6 +2,11 @@ spring:
   application:
     name: enterprise-ai-blueprint
 
+  # providers.yml 包含厂商 preset 字典，由 ProviderPresetEnvironmentPostProcessor 解析后
+  # 注入到 spring.ai.openai.chat.* / embedding.*。本文件不再硬编码默认 base-url / model。
+  config:
+    import: "classpath:providers.yml"
+
   autoconfigure:
     exclude:
       - org.springframework.ai.model.openai.autoconfigure.OpenAiAudioSpeechAutoConfiguration
@@ -13,17 +18,18 @@ spring:
     openai:
       chat:
         api-key: ${BLUEPRINT_CHAT_API_KEY:}
-        base-url: ${BLUEPRINT_CHAT_BASE_URL:https://api.minimaxi.com}
-        options:
-          model: ${BLUEPRINT_CHAT_MODEL:MiniMax-M2.7}
-          temperature: 0.7
+        # base-url 与 options.model / options.temperature 由 preset 注入
+        # 若设置 BLUEPRINT_CHAT_BASE_URL / BLUEPRINT_CHAT_MODEL，会覆盖 preset
       embedding:
         api-key: ${BLUEPRINT_EMBEDDING_API_KEY:}
-        base-url: ${BLUEPRINT_EMBEDDING_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode}
-        options:
-          model: ${BLUEPRINT_EMBEDDING_MODEL:text-embedding-v3}
+        # 同上
 
 blueprint:
+  provider:
+    chat:
+      preset: minimax           # 默认 chat preset；env BLUEPRINT_CHAT_PRESET 可覆盖
+    embedding:
+      preset: dashscope         # 默认 embedding preset；env BLUEPRINT_EMBEDDING_PRESET 可覆盖
   prompts:
     location: classpath:prompts/*.md
     active:

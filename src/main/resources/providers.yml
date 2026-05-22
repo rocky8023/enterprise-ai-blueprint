@@ -1,0 +1,63 @@
+# ============================================================
+# Provider preset 字典
+#
+# 本文件由 ProviderPresetEnvironmentPostProcessor 在 Spring 启动早期加载，
+# 用于把 BLUEPRINT_CHAT_PRESET / BLUEPRINT_EMBEDDING_PRESET 这一类"厂商别名"
+# 解析为具体的 base-url / model / temperature，再注入到 spring.ai.openai.*。
+#
+# 用户也可以在自己的 application.yml 中追加或覆盖：
+#   blueprint:
+#     provider:
+#       providers:
+#         my-internal-proxy:
+#           base-url: https://llm-proxy.intra.example.com
+#           chat-model: qwen2.5-72b
+# ============================================================
+blueprint:
+  provider:
+    providers:
+
+      # ---------- Chat 优先（也支持 embedding 的厂商） ----------
+      minimax:
+        base-url: https://api.minimaxi.com
+        chat-model: MiniMax-M2.7
+        chat-temperature: 0.7
+        docs-url: https://platform.minimaxi.com/
+        notes: 默认 chat preset，国内可直连，国产推理模型会输出 <think> 块（已在 RagService 中剥离）
+
+      deepseek:
+        base-url: https://api.deepseek.com
+        chat-model: deepseek-chat
+        chat-temperature: 0.7
+        docs-url: https://platform.deepseek.com/
+        notes: 国内可直连，性价比高；deepseek-reasoner 同样会输出推理块
+
+      glm:
+        base-url: https://open.bigmodel.cn/api/paas/v4
+        chat-model: glm-4.5
+        chat-temperature: 0.7
+        embedding-model: embedding-3
+        docs-url: https://open.bigmodel.cn/
+        notes: 智谱 GLM，chat + embedding 都支持
+
+      kimi:
+        base-url: https://api.moonshot.cn
+        chat-model: moonshot-v1-8k
+        chat-temperature: 0.7
+        docs-url: https://platform.moonshot.cn/
+        notes: 月之暗面 Kimi，长上下文场景常用
+
+      openai:
+        base-url: https://api.openai.com
+        chat-model: gpt-4o-mini
+        chat-temperature: 0.7
+        embedding-model: text-embedding-3-small
+        docs-url: https://platform.openai.com/
+        notes: 需翻墙；作为"是否真的不绑死厂商"的对照样本保留
+
+      # ---------- Embedding 优先 ----------
+      dashscope:
+        base-url: https://dashscope.aliyuncs.com/compatible-mode
+        embedding-model: text-embedding-v3
+        docs-url: https://bailian.console.aliyun.com/
+        notes: 默认 embedding preset，阿里通义 OpenAI 兼容模式，质量稳价格低
