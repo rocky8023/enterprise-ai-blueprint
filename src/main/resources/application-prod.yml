@@ -1,0 +1,25 @@
+# ============================================================
+# Prod profile —— 生产环境
+# 用法：容器内通过 SPRING_PROFILES_ACTIVE=prod 启用（docker-compose 已默认）
+# ============================================================
+blueprint:
+  prompts:
+    active:
+      rag.company-qa: v1          # prod 锁定 stable 版，避免实验性 prompt 影响业务
+  rag:
+    top-k: 4                       # 稳定召回数量
+
+management:
+  endpoint:
+    health:
+      show-details: never         # prod 严格隐藏健康检查细节
+  endpoints:
+    web:
+      exposure:
+        include: health             # prod 只暴露 health，info / env 等全关
+
+logging:
+  level:
+    root: WARN
+    io.github.mars.blueprint: INFO
+    org.springframework.ai: WARN

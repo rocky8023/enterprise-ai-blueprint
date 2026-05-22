@@ -1,0 +1,24 @@
+# ============================================================
+# Dev profile —— 本地开发环境
+# 用法：SPRING_PROFILES_ACTIVE=dev ./mvnw spring-boot:run
+# ============================================================
+blueprint:
+  prompts:
+    active:
+      rag.company-qa: v2          # dev 跑 beta 版 prompt，验证新 prompt 效果
+  rag:
+    top-k: 6                       # 多召回一些，方便调试观察
+
+management:
+  endpoint:
+    health:
+      show-details: always          # dev 看完整健康检查细节
+  endpoints:
+    web:
+      exposure:
+        include: "*"                # dev 暴露所有 actuator 端点（env、beans、mappings 等）
+
+logging:
+  level:
+    io.github.mars.blueprint: DEBUG
+    org.springframework.ai: DEBUG
