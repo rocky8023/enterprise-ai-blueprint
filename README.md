@@ -103,26 +103,8 @@ curl http://localhost:8080/api/providers | jq .
 
 ## 架构
 
-```mermaid
-flowchart LR
-    User([用户]) -->|HTTP| API[REST API<br/>api/]
+<img width="2840" height="860" alt="diagram-1779430305633" src="https://github.com/user-attachments/assets/4a90fcbb-a298-40e6-be78-96d0d68ac29f" />
 
-    API --> Chat[ChatController]
-    API --> Rag[RagController]
-
-    Rag --> RS[RagService]
-    RS --> PR[PromptRegistry<br/>prompt/]
-    RS --> VS[(SimpleVectorStore)]
-    RS --> CC[ChatClient]
-
-    KI[KnowledgeIngestionService<br/>启动时切片+灌库] --> VS
-
-    VS -.嵌入查询.-> DS[DashScope<br/>text-embedding-v3]
-    CC --> MM[MiniMax<br/>MiniMax-M2.7]
-
-    classDef external fill:#fff3cd,stroke:#856404,color:#000
-    class DS,MM external
-```
 
 **分层原则**：
 
@@ -300,7 +282,7 @@ docker-compose up
 - 中年技术人的副业探索路径
 - 企业 AI 落地的工程化心得
 
-> 📷 公众号二维码（待补图）：`docs/wechat-qr.png`
+> 📷 公众号二维码：`<img width="344" height="344" alt="qrcode_for_gh_6da650e0e7fb_344" src="https://github.com/user-attachments/assets/551854bc-e903-4dd1-838f-17bdb996461b" />`
 
 ---
 
