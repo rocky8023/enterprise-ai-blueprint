@@ -282,7 +282,9 @@ docker-compose up
 - 中年技术人的副业探索路径
 - 企业 AI 落地的工程化心得
 
-> 📷 公众号二维码：`<img width="344" height="344" alt="qrcode_for_gh_6da650e0e7fb_344" src="https://github.com/user-attachments/assets/551854bc-e903-4dd1-838f-17bdb996461b" />`
+> 📷 公众号二维码：
+
+<img width="344" height="344" alt="qrcode_for_gh_6da650e0e7fb_344" src="https://github.com/user-attachments/assets/d85815ac-81c2-4271-af5a-4ba2720496e7" />
 
 ---
 
