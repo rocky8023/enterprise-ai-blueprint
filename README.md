@@ -20,7 +20,7 @@
 - 🧩 **RAG 工程化**：知识切片 + 向量检索 + Prompt 注入 + 思考块剥离，完整链路
 - 🌍 **多环境配置**：dev / prod profile 自动切换 prompt 版本（灰度发布的最朴素实现）
 - 🐳 **生产级 Docker**：multi-stage 构建、非 root 用户、健康检查、Maven 缓存层
-- 📊 **可观测性基线**：Spring Boot Actuator + 调用链日志
+- 📊 **可观测性**：每次 LLM 调用的 prompt 全文 + 变量 + token + 折算成本 + 耗时全程留痕，`/api/traces` 可查、可聚合
 
 ## 这不是什么
 
@@ -67,6 +67,12 @@ curl -G "http://localhost:8080/api/rag/ask" --data-urlencode "q=年假怎么算"
 curl -G "http://localhost:8080/api/rag/ask" \
   --data-urlencode "q=年假怎么算" \
   --data-urlencode "promptVersion=v2"
+
+# 4. 看刚才这几次调用花了多少钱、用了多少 token
+curl http://localhost:8080/api/traces/stats
+curl http://localhost:8080/api/traces          # 最近调用摘要列表
+# 取某条 traceId 看 prompt 全文 + 返回正文
+curl http://localhost:8080/api/traces/<traceId>
 ```
 
 ### 切换 chat / embedding 厂商
@@ -115,6 +121,7 @@ curl http://localhost:8080/api/providers | jq .
 | `prompt/` | Prompt 注册表、模板定义、元数据解析 |
 | `config/` | Spring Bean 装配（VectorStore、ChatClient） |
 | `infra/llm/` | 多模型聚合层：Preset 字典 + `EnvironmentPostProcessor` 把"厂商别名"解析为 `spring.ai.openai.*` 具体值（v1.1 第一阶段完成；v1.1 第二阶段抽象统一接口） |
+| `infra/observability/` | 可观测性层：`LlmTracer` 调用埋点 + `TraceStore` 内存留痕 + 定价表折算成本 |
 
 ---
 
@@ -223,7 +230,23 @@ SPRING_PROFILES_ACTIVE=dev ./mvnw spring-boot:run
 docker-compose up
 ```
 
-### 5. 生产级 Docker
+### 5. 可观测性：每次调用看得见成本
+
+AI 应用上生产，绕不开三个问题：**这次调用发的什么 prompt？花了多少 token？折成钱是多少？** 本项目在每个 LLM 调用点包一层 `LlmTracer`，把这些自动采下来：
+
+- **采什么**：prompt 全文、渲染时传入的变量、命中的模型与 preset、prompt/completion/total token、折算成本、耗时、成功或异常。
+- **怎么采**：用「显式包裹」而非 AOP——调用方把 `call().chatResponse()` 包进 `tracer.traceChat(...)` 即可，读代码一眼看清观测发生在哪、采了什么。
+- **成本怎么算**：定价表外置在 `blueprint.observability.pricing`（model → 元/1K tokens，input/output 分开，未命中走 `default`）。厂商调价或拿到折扣价，改配置即可，不动代码。
+- **怎么看**：`GET /api/traces` 看摘要列表、`/api/traces/{id}` 看单次全文、`/api/traces/stats` 看总 token / 总成本 / 平均耗时聚合。
+
+```bash
+$ curl -s localhost:8080/api/traces/stats
+{"count":12,"totalTokens":8460,"totalCost":0.0631,"avgLatencyMs":1840,"errorCount":0}
+```
+
+> 内存环形缓冲仅作演示，重启即丢；生产应替换为数据库 / Langfuse 等持久化方案（见 Roadmap v1.2）。
+
+### 6. 生产级 Docker
 
 - **multi-stage**：构建阶段用 JDK，运行阶段用 JRE，最终镜像不带 Maven
 - **缓存层**：`pom.xml` 先 copy 跑 `dependency:go-offline`，改代码不重新下依赖
@@ -258,7 +281,7 @@ docker-compose up
 - [x] **Preset 字典 + EnvironmentPostProcessor**：`infra/llm/` 第一阶段，切厂商 = 改一个名字（见上方 [核心特性 #1](#1-多模型聚合preset-字典--environmentpostprocessor)）
 - [ ] **`infra/llm/` 统一接口抽象（第二阶段）**：把 ChatClient / EmbeddingModel 包到自家接口下，运行时按 preset 动态选实例（chat 也能在请求维度切换）
 - [ ] **评测框架**：自动跑 prompt 的 `examples`，回归测试 prompt 修改对效果的影响
-- [ ] **可观测性增强**：调用链 trace（每次调用的 prompt 全文 + 变量 + 耗时 + token + 厂商成本）
+- [x] **可观测性增强**：调用链 trace（每次调用的 prompt 全文 + 变量 + 耗时 + token + 厂商成本）—— `infra/observability/` + `/api/traces`，详见上方 [核心特性 #5](#5-可观测性每次调用看得见成本)
 
 ### v1.2（看反馈）
 - [ ] 向量库替换为 PGVector / Milvus（演示生产级向量存储切换）

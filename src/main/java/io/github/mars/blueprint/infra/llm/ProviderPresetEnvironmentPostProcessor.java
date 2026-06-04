@@ -19,10 +19,10 @@ import java.util.Set;
  * 在 Spring 启动早期把 BLUEPRINT_CHAT_PRESET / BLUEPRINT_EMBEDDING_PRESET 解析成
  * spring.ai.openai.chat.* / embedding.* 具体值，使 Spring AI 的 OpenAI autoconfig
  * 在 bean 装配时拿到的就是最终值。
- *
+ * <p>
  * 优先级（从高到低）：
- *   显式 BLUEPRINT_*_BASE_URL / BLUEPRINT_*_MODEL  > preset 字典  > 不注入（让 Spring AI 自决）
- *
+ * 显式 BLUEPRINT_*_BASE_URL / BLUEPRINT_*_MODEL  > preset 字典  > 不注入（让 Spring AI 自决）
+ * <p>
  * 未知 preset 名称直接抛异常，启动 fail-fast。
  */
 public class ProviderPresetEnvironmentPostProcessor implements EnvironmentPostProcessor, Ordered {
@@ -63,8 +63,8 @@ public class ProviderPresetEnvironmentPostProcessor implements EnvironmentPostPr
             if (presetBaseUrl == null) {
                 throw new IllegalStateException(
                         "未知 " + channel + " preset: '" + presetName + "'. "
-                        + "可用 preset: " + knownPresetNames(env) + ". "
-                        + "在 providers.yml 中追加 preset，或通过 BLUEPRINT_" + upper + "_BASE_URL 直接显式指定 base-url。");
+                                + "可用 preset: " + knownPresetNames(env) + ". "
+                                + "在 providers.yml 中追加 preset，或通过 BLUEPRINT_" + upper + "_BASE_URL 直接显式指定 base-url。");
             }
             String presetModelKey = "chat".equals(channel) ? "chat-model" : "embedding-model";
             String presetModel = env.getProperty(prefix + presetModelKey);

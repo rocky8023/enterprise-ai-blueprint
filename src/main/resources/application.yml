@@ -36,6 +36,19 @@ blueprint:
       rag.company-qa: v1
   rag:
     top-k: 4
+  observability:
+    max-traces: 200          # 内存环形缓冲容量，超出丢弃最旧记录
+    currency: CNY            # 成本货币单位（仅用于展示）
+    # 模型定价表（外置为配置，便于按厂商/企业折扣价调整）。
+    # 单位：元 / 1K tokens，input=提示词、output=补全。
+    # 注意：以下为示例价格，请以各厂商官网最新价为准，按需修改。
+    pricing:
+      - { model: MiniMax-M2.7,    input: 0.001,  output: 0.008 }
+      - { model: deepseek-chat,   input: 0.001,  output: 0.002 }
+      - { model: glm-4.5,         input: 0.0005, output: 0.002 }
+      - { model: moonshot-v1-8k,  input: 0.012,  output: 0.012 }
+      - { model: gpt-4o-mini,     input: 0.0011, output: 0.0044 }
+      - { model: default,         input: 0.002,  output: 0.006 }   # 未命中时的兜底单价
 
 server:
   port: 8080

@@ -1,10 +1,12 @@
 package io.github.mars.blueprint.rag;
 
+import io.github.mars.blueprint.infra.observability.LlmTracer;
 import io.github.mars.blueprint.prompt.PromptDefinition;
 import io.github.mars.blueprint.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
@@ -26,15 +28,18 @@ public class RagService {
     private final VectorStore vectorStore;
     private final ChatClient chatClient;
     private final PromptRegistry promptRegistry;
+    private final LlmTracer tracer;
     private final int topK;
 
     public RagService(VectorStore vectorStore,
                       ChatClient chatClient,
                       PromptRegistry promptRegistry,
+                      LlmTracer tracer,
                       @Value("${blueprint.rag.top-k:4}") int topK) {
         this.vectorStore = vectorStore;
         this.chatClient = chatClient;
         this.promptRegistry = promptRegistry;
+        this.tracer = tracer;
         this.topK = topK;
     }
 
@@ -56,7 +61,13 @@ public class RagService {
 
         log.info("RAG 调用: prompt={}, question={}", promptDef.fullId(), question);
 
-        String rawAnswer = chatClient.prompt(prompt).call().content();
+        ChatResponse chatResponse = tracer.traceChat(
+                new LlmTracer.ChatTraceContext(
+                        promptDef.fullId(),
+                        Map.of("question", question, "contextChars", context.length(), "topK", topK),
+                        prompt),
+                () -> chatClient.prompt(prompt).call().chatResponse());
+        String rawAnswer = chatResponse.getResult().getOutput().getText();
         String answer = stripThinking(rawAnswer);
 
         List<Source> sources = hits.stream()
