@@ -14,13 +14,18 @@ import java.util.concurrent.ConcurrentLinkedDeque;
  * 否则重启即丢、且无法跨实例聚合。
  */
 @Component
-public class TraceStore {
+public class TraceStore implements TraceSink {
 
     private final Deque<LlmCallTrace> traces = new ConcurrentLinkedDeque<>();
     private final int maxTraces;
 
     public TraceStore(ObservabilityProperties properties) {
         this.maxTraces = properties.maxTracesOrDefault();
+    }
+
+    @Override
+    public void accept(LlmCallTrace trace) {
+        record(trace);
     }
 
     public void record(LlmCallTrace trace) {

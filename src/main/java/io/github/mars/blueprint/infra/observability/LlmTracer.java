@@ -8,6 +8,7 @@ import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -23,11 +24,11 @@ public class LlmTracer {
 
     private static final Logger log = LoggerFactory.getLogger(LlmTracer.class);
 
-    private final TraceStore store;
+    private final List<TraceSink> sinks;
     private final ObservabilityProperties properties;
 
-    public LlmTracer(TraceStore store, ObservabilityProperties properties) {
-        this.store = store;
+    public LlmTracer(List<TraceSink> sinks, ObservabilityProperties properties) {
+        this.sinks = sinks;
         this.properties = properties;
     }
 
@@ -42,11 +43,22 @@ public class LlmTracer {
         long start = System.nanoTime();
         try {
             ChatResponse response = call.get();
-            store.record(buildOk(ctx, response, elapsedMs(start)));
+            dispatch(buildOk(ctx, response, elapsedMs(start)));
             return response;
         } catch (RuntimeException e) {
-            store.record(buildError(ctx, elapsedMs(start), e));
+            dispatch(buildError(ctx, elapsedMs(start), e));
             throw e;
+        }
+    }
+
+    /** 扇出到所有 sink；单个 sink 失败不影响其它 sink 与主调用链。 */
+    private void dispatch(LlmCallTrace trace) {
+        for (TraceSink sink : sinks) {
+            try {
+                sink.accept(trace);
+            } catch (RuntimeException e) {
+                log.warn("trace sink {} 处理失败: {}", sink.getClass().getSimpleName(), e.toString());
+            }
         }
     }
 
