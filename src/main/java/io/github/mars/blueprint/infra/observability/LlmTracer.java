@@ -1,6 +1,5 @@
 package io.github.mars.blueprint.infra.observability;
 
-import io.github.mars.blueprint.infra.llm.ProviderRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.metadata.ChatResponseMetadata;
@@ -26,18 +25,14 @@ public class LlmTracer {
 
     private final TraceStore store;
     private final ObservabilityProperties properties;
-    private final ProviderRegistry providerRegistry;
 
-    public LlmTracer(TraceStore store,
-                     ObservabilityProperties properties,
-                     ProviderRegistry providerRegistry) {
+    public LlmTracer(TraceStore store, ObservabilityProperties properties) {
         this.store = store;
         this.properties = properties;
-        this.providerRegistry = providerRegistry;
     }
 
-    /** chat 调用的语义上下文：哪个 prompt、传了什么变量、最终全文。 */
-    public record ChatTraceContext(String promptId, Map<String, Object> variables, String renderedPrompt) {
+    /** chat 调用的语义上下文：哪个 prompt、实际路由到的 preset、传了什么变量、最终全文。 */
+    public record ChatTraceContext(String promptId, String preset, Map<String, Object> variables, String renderedPrompt) {
     }
 
     /**
@@ -45,18 +40,17 @@ public class LlmTracer {
      */
     public ChatResponse traceChat(ChatTraceContext ctx, Supplier<ChatResponse> call) {
         long start = System.nanoTime();
-        String preset = providerRegistry.activeChatPreset();
         try {
             ChatResponse response = call.get();
-            store.record(buildOk(ctx, preset, response, elapsedMs(start)));
+            store.record(buildOk(ctx, response, elapsedMs(start)));
             return response;
         } catch (RuntimeException e) {
-            store.record(buildError(ctx, preset, elapsedMs(start), e));
+            store.record(buildError(ctx, elapsedMs(start), e));
             throw e;
         }
     }
 
-    private LlmCallTrace buildOk(ChatTraceContext ctx, String preset, ChatResponse response, long latencyMs) {
+    private LlmCallTrace buildOk(ChatTraceContext ctx, ChatResponse response, long latencyMs) {
         ChatResponseMetadata meta = response.getMetadata();
         String model = meta != null ? meta.getModel() : null;
 
@@ -81,7 +75,7 @@ public class LlmTracer {
 
         LlmCallTrace trace = new LlmCallTrace(
                 newId(), Instant.now(), "chat",
-                ctx.promptId(), preset, model,
+                ctx.promptId(), ctx.preset(), model,
                 ctx.variables(), ctx.renderedPrompt(), responseText,
                 promptTokens, completionTokens, totalTokens, cost,
                 latencyMs, "ok", null);
@@ -94,11 +88,11 @@ public class LlmTracer {
         return trace;
     }
 
-    private LlmCallTrace buildError(ChatTraceContext ctx, String preset, long latencyMs, RuntimeException e) {
+    private LlmCallTrace buildError(ChatTraceContext ctx, long latencyMs, RuntimeException e) {
         log.warn("LLM trace [error] prompt={} latency={}ms error={}", ctx.promptId(), latencyMs, e.toString());
         return new LlmCallTrace(
                 newId(), Instant.now(), "chat",
-                ctx.promptId(), preset, null,
+                ctx.promptId(), ctx.preset(), null,
                 ctx.variables(), ctx.renderedPrompt(), null,
                 null, null, null, null,
                 latencyMs, "error", e.getMessage());

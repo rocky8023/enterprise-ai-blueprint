@@ -61,8 +61,11 @@
     <label style="flex:1 1 300px">问题
       <input type="text" id="question" value="年假怎么算" placeholder="问知识库里的问题，如：报销流程是什么">
     </label>
-    <label style="flex:0 0 180px">Prompt 版本
+    <label style="flex:0 0 160px">Prompt 版本
       <select id="version"><option value="">（活跃版本）</option></select>
+    </label>
+    <label style="flex:0 0 160px">厂商 preset
+      <select id="preset"><option value="">（默认）</option></select>
     </label>
     <button id="btn-ask">提问</button>
     <button id="btn-compare" class="secondary outline" title="同一问题并排跑 v1 与 v2，直观看 Prompt 改动对效果的影响">对比 v1 / v2</button>
@@ -100,7 +103,7 @@
   <header>③ 多模型聚合 · 厂商 preset</header>
   <figure>
     <table class="traces">
-      <thead><tr><th>preset</th><th>chat 模型</th><th>embedding 模型</th><th>base-url</th><th>角色</th></tr></thead>
+      <thead><tr><th>preset</th><th>chat 模型</th><th>embedding 模型</th><th>角色</th><th>可路由</th></tr></thead>
       <tbody id="providers"><tr><td colspan="5" class="sub">加载中…</td></tr></tbody>
     </table>
   </figure>
@@ -164,7 +167,10 @@ function renderAnswer(data) {
   const sources = (data.sources || []).map(s =>
     `<div class="src"><strong>${esc(s.filename)}</strong><br>${esc(s.preview)}</div>`).join('');
   return `<div class="ans">${esc(data.answer)}</div>
-    <p style="margin:0.5rem 0"><span class="badge">${esc(data.promptUsed)}</span></p>
+    <p style="margin:0.5rem 0">
+      <span class="badge">${esc(data.promptUsed)}</span>
+      ${data.presetUsed ? '<span class="badge muted">preset: ' + esc(data.presetUsed) + '</span>' : ''}
+    </p>
     <details><summary class="sub">命中来源 ${data.sources ? data.sources.length : 0} 条</summary>${sources}</details>`;
 }
 
@@ -172,10 +178,13 @@ async function ask() {
   const q = $('#question').value.trim();
   if (!q) return;
   const v = $('#version').value;
+  const pr = $('#preset').value;
   const box = $('#ask-result');
   box.innerHTML = '<p aria-busy="true">模型生成中…</p>';
   try {
-    const url = '/api/rag/ask?q=' + encodeURIComponent(q) + (v ? '&promptVersion=' + encodeURIComponent(v) : '');
+    const url = '/api/rag/ask?q=' + encodeURIComponent(q)
+      + (v ? '&promptVersion=' + encodeURIComponent(v) : '')
+      + (pr ? '&preset=' + encodeURIComponent(pr) : '');
     const data = await api(url);
     box.innerHTML = renderAnswer(data);
     refreshObservability();
@@ -187,12 +196,14 @@ async function ask() {
 async function compare() {
   const q = $('#question').value.trim();
   if (!q) return;
+  const pr = $('#preset').value;
+  const presetParam = pr ? '&preset=' + encodeURIComponent(pr) : '';
   const box = $('#ask-result');
   box.innerHTML = '<p aria-busy="true">并排跑 v1 / v2 中…</p>';
   try {
     const [v1, v2] = await Promise.all([
-      api('/api/rag/ask?q=' + encodeURIComponent(q) + '&promptVersion=v1'),
-      api('/api/rag/ask?q=' + encodeURIComponent(q) + '&promptVersion=v2'),
+      api('/api/rag/ask?q=' + encodeURIComponent(q) + '&promptVersion=v1' + presetParam),
+      api('/api/rag/ask?q=' + encodeURIComponent(q) + '&promptVersion=v2' + presetParam),
     ]);
     box.innerHTML = `<div class="compare">
       <div><h6>v1</h6>${renderAnswer(v1)}</div>
@@ -283,10 +294,19 @@ async function loadProviders() {
         <td><strong>${esc(p.name)}</strong></td>
         <td class="mono">${esc(p.chatModel || '—')}</td>
         <td class="mono">${esc(p.embeddingModel || '—')}</td>
-        <td class="mono sub">${esc(p.baseUrl || '')}</td>
         <td>${roles.join(' ') || '<span class="badge muted">备选</span>'}</td>
+        <td>${p.routable ? '<span class="badge green">✓</span>' : '<span class="sub">—</span>'}</td>
       </tr>`;
     }).join('');
+    // 用「可路由」的 preset 填充 RAG 控制台的 preset 选择器
+    const sel = $('#preset');
+    sel.querySelectorAll('option:not([value=""])').forEach(o => o.remove());
+    data.presets.filter(p => p.routable).forEach(p => {
+      const o = document.createElement('option');
+      o.value = p.name;
+      o.textContent = p.name + (p.activeAsChat ? '（默认）' : '');
+      sel.appendChild(o);
+    });
   } catch (e) {
     $('#active-preset').textContent = '（服务未就绪）';
     banner('后端未就绪或未配置 key：' + e.message);

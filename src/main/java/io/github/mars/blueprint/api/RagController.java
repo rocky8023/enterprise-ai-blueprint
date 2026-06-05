@@ -29,15 +29,17 @@ public class RagController {
     @GetMapping("/ask")
     public RagService.RagAnswer ask(
             @RequestParam("q") String question,
-            @RequestParam(value = "promptVersion", required = false) String promptVersion) {
-        return ragService.ask(question, promptVersion);
+            @RequestParam(value = "promptVersion", required = false) String promptVersion,
+            @RequestParam(value = "preset", required = false) String preset) {
+        return ragService.ask(question, promptVersion, preset);
     }
 
     @PostMapping("/ask")
     public RagService.RagAnswer askPost(@RequestBody Map<String, String> req) {
         return ragService.ask(
                 req.getOrDefault("question", ""),
-                req.get("promptVersion"));
+                req.get("promptVersion"),
+                req.get("preset"));
     }
 
     @GetMapping("/prompts")

@@ -123,7 +123,7 @@ curl http://localhost:8080/api/providers | jq .
 | `rag/` | RAG 业务编排（检索 + Prompt 注入 + 生成） |
 | `prompt/` | Prompt 注册表、模板定义、元数据解析 |
 | `config/` | Spring Bean 装配（VectorStore、ChatClient） |
-| `infra/llm/` | 多模型聚合层：Preset 字典 + `EnvironmentPostProcessor` 把"厂商别名"解析为 `spring.ai.openai.*` 具体值（v1.1 第一阶段完成；v1.1 第二阶段抽象统一接口） |
+| `infra/llm/` | 多模型聚合层：Preset 字典 + `EnvironmentPostProcessor`（一阶段，启动期定默认厂商）+ `ChatRouter`（二阶段，请求维度按 preset 切 chat） |
 | `infra/observability/` | 可观测性层：`LlmTracer` 调用埋点 + `TraceStore` 内存留痕 + 定价表折算成本 |
 
 ---
@@ -175,6 +175,18 @@ blueprint:
 ```
 
 未知 preset 名直接 fail-fast，错误信息附带可用 preset 列表 —— 配置错误不留运行时谜团。
+
+**二阶段：请求维度切 chat（`ChatRouter`）。** 上面是「启动期定一个默认厂商」；二阶段在它之上加一层 `ChatRouter`，让<b>单次请求</b>临时切到别的 preset：
+
+```bash
+# 默认 chat 走 minimax，这一次请求临时切到 deepseek
+curl -G "http://localhost:8080/api/rag/ask" \
+  --data-urlencode "q=年假怎么算" --data-urlencode "preset=deepseek"
+```
+
+机制：默认 preset 复用启动时自动装配的 `ChatClient`；其它 preset 在首次被请求时，用字典里的 base-url/model + 环境变量 **`BLUEPRINT_KEY_<PRESET>`**（如 `BLUEPRINT_KEY_DEEPSEEK`）的 key 现场构建 `ChatClient` 并缓存。没配 key、preset 不支持 chat、preset 未知 —— 三种情况都 fail-fast。`GET /api/providers` 的 `routable` 字段标出哪些 preset 当前可被路由到。
+
+> embedding 不做请求级切换：向量库是用某个 embedding 模型建的索引，查询时换模型会语义错位，因此 embedding 仍按启动时的 preset 固定。
 
 ### 2. Prompt 即代码（frontmatter 元数据）
 
@@ -282,7 +294,7 @@ $ curl -s localhost:8080/api/traces/stats
 
 ### v1.1（接下来）
 - [x] **Preset 字典 + EnvironmentPostProcessor**：`infra/llm/` 第一阶段，切厂商 = 改一个名字（见上方 [核心特性 #1](#1-多模型聚合preset-字典--environmentpostprocessor)）
-- [ ] **`infra/llm/` 统一接口抽象（第二阶段）**：把 ChatClient / EmbeddingModel 包到自家接口下，运行时按 preset 动态选实例（chat 也能在请求维度切换）
+- [x] **`infra/llm/` 统一接口抽象（第二阶段）**：`ChatRouter` 把 chat 路由下沉到请求维度——`/api/rag/ask?preset=deepseek` 临时切到别的厂商（前提：配了 `BLUEPRINT_KEY_<PRESET>`），默认仍走启动时的 preset。embedding 不做请求级切换（与向量库索引时的模型必须一致，切了语义对不上）
 - [ ] **评测框架**：自动跑 prompt 的 `examples`，回归测试 prompt 修改对效果的影响
 - [x] **可观测性增强**：调用链 trace（每次调用的 prompt 全文 + 变量 + 耗时 + token + 厂商成本）—— `infra/observability/` + `/api/traces`，详见上方 [核心特性 #5](#5-可观测性每次调用看得见成本)
 

@@ -1,11 +1,11 @@
 package io.github.mars.blueprint.rag;
 
+import io.github.mars.blueprint.infra.llm.ChatRouter;
 import io.github.mars.blueprint.infra.observability.LlmTracer;
 import io.github.mars.blueprint.prompt.PromptDefinition;
 import io.github.mars.blueprint.prompt.PromptRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
@@ -26,29 +26,34 @@ public class RagService {
     private static final Pattern THINK_BLOCK = Pattern.compile("<think>.*?</think>", Pattern.DOTALL);
 
     private final VectorStore vectorStore;
-    private final ChatClient chatClient;
+    private final ChatRouter chatRouter;
     private final PromptRegistry promptRegistry;
     private final LlmTracer tracer;
     private final int topK;
 
     public RagService(VectorStore vectorStore,
-                      ChatClient chatClient,
+                      ChatRouter chatRouter,
                       PromptRegistry promptRegistry,
                       LlmTracer tracer,
                       @Value("${blueprint.rag.top-k:4}") int topK) {
         this.vectorStore = vectorStore;
-        this.chatClient = chatClient;
+        this.chatRouter = chatRouter;
         this.promptRegistry = promptRegistry;
         this.tracer = tracer;
         this.topK = topK;
     }
 
     public RagAnswer ask(String question) {
-        return ask(question, null);
+        return ask(question, null, null);
     }
 
     public RagAnswer ask(String question, String promptVersion) {
+        return ask(question, promptVersion, null);
+    }
+
+    public RagAnswer ask(String question, String promptVersion, String preset) {
         PromptDefinition promptDef = promptRegistry.get(PROMPT_KEY, promptVersion);
+        ChatRouter.Resolved chat = chatRouter.resolve(preset);
 
         List<Document> hits = vectorStore.similaritySearch(
                 SearchRequest.builder().query(question).topK(topK).build());
@@ -59,14 +64,15 @@ public class RagService {
 
         String prompt = promptDef.render(Map.of("context", context, "question", question));
 
-        log.info("RAG 调用: prompt={}, question={}", promptDef.fullId(), question);
+        log.info("RAG 调用: prompt={}, preset={}, question={}", promptDef.fullId(), chat.preset(), question);
 
         ChatResponse chatResponse = tracer.traceChat(
                 new LlmTracer.ChatTraceContext(
                         promptDef.fullId(),
+                        chat.preset(),
                         Map.of("question", question, "contextChars", context.length(), "topK", topK),
                         prompt),
-                () -> chatClient.prompt(prompt).call().chatResponse());
+                () -> chat.client().prompt(prompt).call().chatResponse());
         String rawAnswer = chatResponse.getResult().getOutput().getText();
         String answer = stripThinking(rawAnswer);
 
@@ -76,7 +82,7 @@ public class RagService {
                         preview(d.getText())))
                 .toList();
 
-        return new RagAnswer(answer, promptDef.fullId(), sources);
+        return new RagAnswer(answer, promptDef.fullId(), chat.preset(), sources);
     }
 
     private static String stripThinking(String text) {
@@ -93,6 +99,6 @@ public class RagService {
         return text.length() > 80 ? text.substring(0, 80) + "..." : text;
     }
 
-    public record RagAnswer(String answer, String promptUsed, List<Source> sources) {}
+    public record RagAnswer(String answer, String promptUsed, String presetUsed, List<Source> sources) {}
     public record Source(String filename, String preview) {}
 }
