@@ -128,7 +128,7 @@ curl http://localhost:8080/api/providers | jq .
 | `prompt/` | Prompt 注册表、模板定义、元数据解析 |
 | `config/` | Spring Bean 装配（VectorStore、ChatClient） |
 | `infra/llm/` | 多模型聚合层：Preset 字典 + `EnvironmentPostProcessor`（一阶段，启动期定默认厂商）+ `ChatRouter`（二阶段，请求维度按 preset 切 chat） |
-| `infra/observability/` | 可观测性层：`LlmTracer` 调用埋点 + `TraceStore` 内存留痕 + 定价表折算成本 |
+| `infra/observability/` | 可观测性层：`LlmTracer` 埋点 + `TraceSink` 可插拔（`TraceStore` 内存 / `LangfuseExporter` 推送 Langfuse）+ 定价表折算成本 |
 | `eval/` | 评测框架：`PromptEvaluator` 跑 prompt 的 `examples` 做关键词回归，输出 `EvalReport` |
 
 ---
@@ -264,7 +264,16 @@ $ curl -s localhost:8080/api/traces/stats
 {"count":12,"totalTokens":8460,"totalCost":0.0631,"avgLatencyMs":1840,"errorCount":0}
 ```
 
-> 内存环形缓冲仅作演示，重启即丢；生产应替换为数据库 / Langfuse 等持久化方案（见 Roadmap v1.2）。
+**可插拔 sink + Langfuse。** 采到的 trace 经 `TraceSink` 接口扇出：内置 `TraceStore`（内存）始终在，接外部观测后端只需再实现一个 sink、不改埋点。已内置 **`LangfuseExporter`**——配好密钥即把每条调用异步推送到 [Langfuse](https://langfuse.com)（trace + generation，携带 token 与成本），默认关闭：
+
+```bash
+BLUEPRINT_LANGFUSE_ENABLED=true
+BLUEPRINT_LANGFUSE_PUBLIC_KEY=pk-lf-xxx
+BLUEPRINT_LANGFUSE_SECRET_KEY=sk-lf-xxx
+# 自托管再加 BLUEPRINT_LANGFUSE_HOST=https://your-langfuse
+```
+
+> 内存环形缓冲重启即丢、无法跨实例聚合，仅作演示与本地排查；上生产开启 Langfuse（或自行实现 `TraceSink` 接数据库/时序库）即可。
 
 ### 6. 评测框架：改完 prompt 跑回归
 
@@ -322,7 +331,7 @@ $ curl -s localhost:8080/api/eval/rag.company-qa
 ### v1.2（看反馈）
 - [ ] 向量库替换为 PGVector / Milvus（演示生产级向量存储切换）
 - [ ] RAG advisor 模式（用 Spring AI 的 `QuestionAnswerAdvisor` 重构对比）
-- [ ] 接入 Langfuse 做调用追踪
+- [x] 接入 Langfuse 做调用追踪 —— `TraceSink` 可插拔 + `LangfuseExporter`，默认关闭，配密钥即异步推送（见上方 [核心特性 #5](#5-可观测性每次调用看得见成本)）
 
 ### v2.0（远期）
 - [ ] Spring AI Alibaba 集成（原生支持通义系列）
