@@ -16,7 +16,8 @@
 一个**可直接运行**的企业级 AI 应用工程化参考实现。用一个"企业知识库 RAG 问答"场景作为载体，演示生产环境 AI 应用应该具备的工程能力：
 
 - 🔌 **多模型聚合**：chat 走 MiniMax、embedding 走 DashScope，纯 YAML 配置即可切换厂商
-- 📝 **Prompt 即代码**：模板带 frontmatter 元数据、版本化管理、灰度切换
+- 📝 **Prompt 即代码**：模板带 frontmatter 元数据、版本化管理、灰度切换，自带 `examples` 可一键回归评测
+- 🎯 **评测框架**：把 prompt 的 `examples`（问题 + 期望关键词）当回归用例跑，按版本给出 pass 率，改完 prompt 一眼看出有没有改坏
 - 🧩 **RAG 工程化**：知识切片 + 向量检索 + Prompt 注入 + 思考块剥离，完整链路
 - 🌍 **多环境配置**：dev / prod profile 自动切换 prompt 版本（灰度发布的最朴素实现）
 - 🐳 **生产级 Docker**：multi-stage 构建、非 root 用户、健康检查、Maven 缓存层
@@ -74,6 +75,9 @@ curl http://localhost:8080/api/traces/stats
 curl http://localhost:8080/api/traces          # 最近调用摘要列表
 # 取某条 traceId 看 prompt 全文 + 返回正文
 curl http://localhost:8080/api/traces/<traceId>
+
+# 5. 跑 prompt 回归评测（v1 vs v2 各版本 pass 率）
+curl http://localhost:8080/api/eval/rag.company-qa
 ```
 
 > 🖥️ 不想敲 curl？直接浏览器打开 **<http://localhost:8080/>** —— 自带的工程化演示控制台，RAG 问答、Prompt v1/v2 并排对比、调用 token/成本面板、厂商 preset 一页看全。零构建、纯静态页（`src/main/resources/static/index.html`），由 Spring Boot 直接托管。
@@ -125,6 +129,7 @@ curl http://localhost:8080/api/providers | jq .
 | `config/` | Spring Bean 装配（VectorStore、ChatClient） |
 | `infra/llm/` | 多模型聚合层：Preset 字典 + `EnvironmentPostProcessor`（一阶段，启动期定默认厂商）+ `ChatRouter`（二阶段，请求维度按 preset 切 chat） |
 | `infra/observability/` | 可观测性层：`LlmTracer` 调用埋点 + `TraceStore` 内存留痕 + 定价表折算成本 |
+| `eval/` | 评测框架：`PromptEvaluator` 跑 prompt 的 `examples` 做关键词回归，输出 `EvalReport` |
 
 ---
 
@@ -261,7 +266,23 @@ $ curl -s localhost:8080/api/traces/stats
 
 > 内存环形缓冲仅作演示，重启即丢；生产应替换为数据库 / Langfuse 等持久化方案（见 Roadmap v1.2）。
 
-### 6. 生产级 Docker
+### 6. 评测框架：改完 prompt 跑回归
+
+Prompt 是代码，就该有测试。每个 prompt 的 frontmatter 自带 `examples`（问题 + 期望关键词），评测框架把它们当回归用例：
+
+- **怎么跑**：`PromptEvaluator` 逐条把 `examples` 的问题过一遍真实 RAG 链路，断言答案是否命中全部 `expected_keywords`，按版本汇总 pass 率。
+- **怎么用**：改完 prompt（或切了模型/preset）跑一遍，pass 率掉了就说明这次改动把原本答对的问题改坏了——这正是 [Prompt 即代码](#2-prompt-即代码frontmatter-元数据) 闭环的最后一块。
+
+```bash
+# 评测 rag.company-qa 的全部版本，回归对比 v1 / v2
+$ curl -s localhost:8080/api/eval/rag.company-qa
+[{"promptKey":"rag.company-qa","version":"v1","total":2,"passed":2,"passRate":100.0,"cases":[...]},
+ {"promptKey":"rag.company-qa","version":"v2","total":2,"passed":2,"passRate":100.0,"cases":[...]}]
+```
+
+> 关键词「包含」判定朴素但够用，目的是给改动一个快速回归信号；需要语义相似度或 LLM 裁判时可在 `PromptEvaluator` 扩展。
+
+### 7. 生产级 Docker
 
 - **multi-stage**：构建阶段用 JDK，运行阶段用 JRE，最终镜像不带 Maven
 - **缓存层**：`pom.xml` 先 copy 跑 `dependency:go-offline`，改代码不重新下依赖
@@ -295,7 +316,7 @@ $ curl -s localhost:8080/api/traces/stats
 ### v1.1（接下来）
 - [x] **Preset 字典 + EnvironmentPostProcessor**：`infra/llm/` 第一阶段，切厂商 = 改一个名字（见上方 [核心特性 #1](#1-多模型聚合preset-字典--environmentpostprocessor)）
 - [x] **`infra/llm/` 统一接口抽象（第二阶段）**：`ChatRouter` 把 chat 路由下沉到请求维度——`/api/rag/ask?preset=deepseek` 临时切到别的厂商（前提：配了 `BLUEPRINT_KEY_<PRESET>`），默认仍走启动时的 preset。embedding 不做请求级切换（与向量库索引时的模型必须一致，切了语义对不上）
-- [ ] **评测框架**：自动跑 prompt 的 `examples`，回归测试 prompt 修改对效果的影响
+- [x] **评测框架**：自动跑 prompt 的 `examples`，回归测试 prompt 修改对效果的影响 —— `eval/` + `/api/eval/{key}`，详见上方 [核心特性 #6](#6-评测框架改完-prompt-跑回归)
 - [x] **可观测性增强**：调用链 trace（每次调用的 prompt 全文 + 变量 + 耗时 + token + 厂商成本）—— `infra/observability/` + `/api/traces`，详见上方 [核心特性 #5](#5-可观测性每次调用看得见成本)
 
 ### v1.2（看反馈）

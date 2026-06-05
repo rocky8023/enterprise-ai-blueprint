@@ -110,6 +110,16 @@
   <small class="sub">切厂商只需改一个环境变量 <code class="mono">BLUEPRINT_CHAT_PRESET</code>，无需改代码或重建。</small>
 </article>
 
+<!-- ④ Prompt 评测 -->
+<article>
+  <header class="row-actions" style="justify-content:space-between">
+    <span>④ Prompt 评测 · 改完跑回归</span>
+    <button id="btn-eval" class="secondary outline" style="margin:0;padding:0.2rem 0.7rem;font-size:0.8rem">运行评测</button>
+  </header>
+  <small class="sub">对 prompt 自带的 examples（问题 + 期望关键词）逐条跑 RAG，按版本给出 pass 率——改完 prompt 一眼看出有没有改坏。注意会真实调用模型。</small>
+  <div id="eval-result"></div>
+</article>
+
 <!-- trace 详情弹窗 -->
 <dialog id="trace-dialog">
   <article>
@@ -313,11 +323,40 @@ async function loadProviders() {
   }
 }
 
+// ---------- ④ Prompt 评测 ----------
+async function runEval() {
+  const box = $('#eval-result');
+  box.innerHTML = '<p aria-busy="true">评测中（逐条真实调用模型）…</p>';
+  try {
+    const reports = await api('/api/eval/rag.company-qa');
+    let html = '<table class="traces"><thead><tr><th>版本</th><th>通过</th><th>pass 率</th><th>用例</th></tr></thead><tbody>';
+    reports.forEach(r => {
+      const cases = r.cases.map(c =>
+        `<div class="src"><strong>${c.passed ? '✓' : '✗'}</strong> ${esc(c.question)}`
+        + (c.missingKeywords && c.missingKeywords.length
+            ? ' <span class="err">缺：' + esc(c.missingKeywords.join('、')) + '</span>' : '')
+        + '</div>').join('');
+      html += `<tr>
+        <td><span class="badge">${esc(r.version)}</span></td>
+        <td class="mono">${r.passed}/${r.total}</td>
+        <td class="mono ${r.passRate === 100 ? '' : 'cost'}">${r.passRate}%</td>
+        <td><details><summary class="sub">查看</summary>${cases}</details></td>
+      </tr>`;
+    });
+    html += '</tbody></table>';
+    box.innerHTML = html;
+    refreshObservability();   // 评测也产生 LLM 调用，刷新可观测面板
+  } catch (e) {
+    box.innerHTML = `<p class="err">评测失败：${esc(e.message)}</p>`;
+  }
+}
+
 // ---------- 事件绑定 ----------
 $('#btn-ask').addEventListener('click', ask);
 $('#btn-compare').addEventListener('click', compare);
 $('#btn-refresh').addEventListener('click', refreshObservability);
 $('#btn-clear').addEventListener('click', clearTraces);
+$('#btn-eval').addEventListener('click', runEval);
 $('#question').addEventListener('keydown', (e) => { if (e.key === 'Enter') ask(); });
 $('#td-close').addEventListener('click', (e) => { e.preventDefault(); $('#trace-dialog').close(); });
 
