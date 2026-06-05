@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>enterprise-ai-blueprint · 工程化演示控制台</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <style>
+    :root { --pico-spacing: 0.9rem; }
+    body { max-width: 1080px; margin: 0 auto; padding: 1.2rem; }
+    header.app { border-bottom: 1px solid var(--pico-muted-border-color); margin-bottom: 1.2rem; }
+    header.app h1 { margin-bottom: 0.2rem; font-size: 1.5rem; }
+    .sub { color: var(--pico-muted-color); font-size: 0.9rem; }
+    .badge { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 0.5rem;
+             font-size: 0.75rem; font-weight: 600; background: var(--pico-primary-background);
+             color: var(--pico-primary-inverse); margin-left: 0.3rem; }
+    .badge.muted { background: var(--pico-muted-border-color); color: var(--pico-color); }
+    .badge.green { background: #2e7d32; color: #fff; }
+    .badge.amber { background: #b9770e; color: #fff; }
+    article { margin-bottom: 1.2rem; }
+    article > header { font-weight: 600; }
+    .stat-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.6rem; }
+    .stat { background: var(--pico-card-sectioning-background-color); border-radius: 0.5rem;
+            padding: 0.6rem 0.8rem; text-align: center; }
+    .stat .num { font-size: 1.3rem; font-weight: 700; }
+    .stat .lbl { font-size: 0.72rem; color: var(--pico-muted-color); }
+    .cost { color: #c0392b; }
+    table.traces td, table.traces th { padding: 0.35rem 0.5rem; font-size: 0.82rem; }
+    table.traces tbody tr { cursor: pointer; }
+    table.traces tbody tr:hover { background: var(--pico-card-sectioning-background-color); }
+    .mono { font-family: var(--pico-font-family-monospace); }
+    .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; }
+    .ans { white-space: pre-wrap; word-break: break-word; }
+    .src { font-size: 0.78rem; color: var(--pico-muted-color); border-left: 2px solid var(--pico-muted-border-color);
+           padding-left: 0.5rem; margin: 0.3rem 0; }
+    .err { color: #c0392b; font-size: 0.85rem; }
+    pre.full { white-space: pre-wrap; word-break: break-word; font-size: 0.78rem; max-height: 40vh; overflow: auto; }
+    .row-actions { display: flex; gap: 0.5rem; align-items: center; }
+    .toolbar { display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: end; }
+    .toolbar > * { margin-bottom: 0 !important; }
+    footer.app { color: var(--pico-muted-color); font-size: 0.8rem; text-align: center;
+                 margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--pico-muted-border-color); }
+    @media (max-width: 720px) { .stat-grid { grid-template-columns: repeat(2, 1fr); } .compare { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+<header class="app">
+  <h1>enterprise-ai-blueprint <span class="badge muted">演示控制台</span></h1>
+  <p class="sub">
+    不是聊天框，是把这个 blueprint 的工程化能力摆出来看：RAG + Prompt 版本灰度 + 调用可观测性 + 多模型聚合。
+    <br>当前生效：<span id="active-preset" class="mono">加载中…</span>
+  </p>
+</header>
+
+<div id="banner"></div>
+
+<!-- ① RAG 问答 + Prompt 版本灰度 -->
+<article>
+  <header>① RAG 问答 · Prompt 版本灰度</header>
+  <div class="toolbar">
+    <label style="flex:1 1 300px">问题
+      <input type="text" id="question" value="年假怎么算" placeholder="问知识库里的问题，如：报销流程是什么">
+    </label>
+    <label style="flex:0 0 180px">Prompt 版本
+      <select id="version"><option value="">（活跃版本）</option></select>
+    </label>
+    <button id="btn-ask">提问</button>
+    <button id="btn-compare" class="secondary outline" title="同一问题并排跑 v1 与 v2，直观看 Prompt 改动对效果的影响">对比 v1 / v2</button>
+  </div>
+  <div id="ask-result"></div>
+</article>
+
+<!-- ② 可观测性面板 -->
+<article>
+  <header class="row-actions" style="justify-content:space-between">
+    <span>② 可观测性 · 每次调用看得见成本</span>
+    <span class="row-actions">
+      <button id="btn-refresh" class="secondary outline" style="margin:0;padding:0.2rem 0.7rem;font-size:0.8rem">刷新</button>
+      <button id="btn-clear" class="contrast outline" style="margin:0;padding:0.2rem 0.7rem;font-size:0.8rem">清空</button>
+    </span>
+  </header>
+  <div class="stat-grid" id="stats">
+    <div class="stat"><div class="num" id="s-count">—</div><div class="lbl">调用次数</div></div>
+    <div class="stat"><div class="num" id="s-tokens">—</div><div class="lbl">总 tokens</div></div>
+    <div class="stat"><div class="num cost" id="s-cost">—</div><div class="lbl">总成本</div></div>
+    <div class="stat"><div class="num" id="s-latency">—</div><div class="lbl">平均耗时(ms)</div></div>
+    <div class="stat"><div class="num" id="s-error">—</div><div class="lbl">错误数</div></div>
+  </div>
+  <figure style="margin-top:0.8rem">
+    <table class="traces">
+      <thead><tr><th>时间</th><th>模型</th><th>Prompt</th><th>tokens(P/C)</th><th>成本</th><th>耗时</th><th>状态</th></tr></thead>
+      <tbody id="traces"><tr><td colspan="7" class="sub">暂无调用记录，先在上方提个问。</td></tr></tbody>
+    </table>
+  </figure>
+  <small class="sub">点击任意一行查看该次调用的 prompt 全文、变量与返回正文。</small>
+</article>
+
+<!-- ③ 多模型聚合 -->
+<article>
+  <header>③ 多模型聚合 · 厂商 preset</header>
+  <figure>
+    <table class="traces">
+      <thead><tr><th>preset</th><th>chat 模型</th><th>embedding 模型</th><th>base-url</th><th>角色</th></tr></thead>
+      <tbody id="providers"><tr><td colspan="5" class="sub">加载中…</td></tr></tbody>
+    </table>
+  </figure>
+  <small class="sub">切厂商只需改一个环境变量 <code class="mono">BLUEPRINT_CHAT_PRESET</code>，无需改代码或重建。</small>
+</article>
+
+<!-- trace 详情弹窗 -->
+<dialog id="trace-dialog">
+  <article>
+    <header class="row-actions" style="justify-content:space-between">
+      <strong id="td-title">调用详情</strong>
+      <a href="#close" id="td-close" aria-label="Close" class="contrast" style="text-decoration:none">✕</a>
+    </header>
+    <div id="td-body"></div>
+  </article>
+</dialog>
+
+<footer class="app">
+  enterprise-ai-blueprint · 工程化演示控制台 · 所有数据来自本服务的 REST API（<code class="mono">/api/*</code>）
+</footer>
+
+<script>
+const $ = (s) => document.querySelector(s);
+
+async function api(path, opts) {
+  const res = await fetch(path, opts);
+  if (!res.ok) {
+    let detail = `${res.status} ${res.statusText}`;
+    try { const j = await res.json(); if (j.message) detail += ` — ${j.message}`; } catch (_) {}
+    throw new Error(detail);
+  }
+  return res.status === 204 ? null : res.json();
+}
+
+const esc = (s) => { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; };
+const money = (v) => v == null ? '—' : '¥' + Number(v).toFixed(6).replace(/\.?0+$/, '');
+const fmtTime = (ts) => ts ? new Date(ts).toLocaleTimeString('zh-CN', { hour12: false }) : '—';
+
+function banner(msg) {
+  $('#banner').innerHTML = msg
+    ? `<article style="border-left:3px solid #c0392b"><small class="err">⚠ ${esc(msg)}</small></article>` : '';
+}
+
+// ---------- ① RAG ----------
+async function loadPrompts() {
+  try {
+    const list = await api('/api/rag/prompts');
+    const versions = list.filter(p => p.key === 'rag.company-qa')
+                         .sort((a, b) => a.version.localeCompare(b.version));
+    const sel = $('#version');
+    versions.forEach(p => {
+      const o = document.createElement('option');
+      o.value = p.version;
+      o.textContent = `${p.version}${p.status ? ' · ' + p.status : ''}`;
+      sel.appendChild(o);
+    });
+  } catch (e) { /* 非致命，保留默认项 */ }
+}
+
+function renderAnswer(data) {
+  const sources = (data.sources || []).map(s =>
+    `<div class="src"><strong>${esc(s.filename)}</strong><br>${esc(s.preview)}</div>`).join('');
+  return `<div class="ans">${esc(data.answer)}</div>
+    <p style="margin:0.5rem 0"><span class="badge">${esc(data.promptUsed)}</span></p>
+    <details><summary class="sub">命中来源 ${data.sources ? data.sources.length : 0} 条</summary>${sources}</details>`;
+}
+
+async function ask() {
+  const q = $('#question').value.trim();
+  if (!q) return;
+  const v = $('#version').value;
+  const box = $('#ask-result');
+  box.innerHTML = '<p aria-busy="true">模型生成中…</p>';
+  try {
+    const url = '/api/rag/ask?q=' + encodeURIComponent(q) + (v ? '&promptVersion=' + encodeURIComponent(v) : '');
+    const data = await api(url);
+    box.innerHTML = renderAnswer(data);
+    refreshObservability();
+  } catch (e) {
+    box.innerHTML = `<p class="err">调用失败：${esc(e.message)}<br><small>若提示 API key，请确认服务已加载 .env 中的 key。</small></p>`;
+  }
+}
+
+async function compare() {
+  const q = $('#question').value.trim();
+  if (!q) return;
+  const box = $('#ask-result');
+  box.innerHTML = '<p aria-busy="true">并排跑 v1 / v2 中…</p>';
+  try {
+    const [v1, v2] = await Promise.all([
+      api('/api/rag/ask?q=' + encodeURIComponent(q) + '&promptVersion=v1'),
+      api('/api/rag/ask?q=' + encodeURIComponent(q) + '&promptVersion=v2'),
+    ]);
+    box.innerHTML = `<div class="compare">
+      <div><h6>v1</h6>${renderAnswer(v1)}</div>
+      <div><h6>v2</h6>${renderAnswer(v2)}</div></div>`;
+    refreshObservability();
+  } catch (e) {
+    box.innerHTML = `<p class="err">对比失败：${esc(e.message)}</p>`;
+  }
+}
+
+// ---------- ② 可观测性 ----------
+async function loadStats() {
+  try {
+    const s = await api('/api/traces/stats');
+    $('#s-count').textContent = s.count;
+    $('#s-tokens').textContent = s.totalTokens;
+    $('#s-cost').textContent = money(s.totalCost);
+    $('#s-latency').textContent = s.avgLatencyMs;
+    $('#s-error').textContent = s.errorCount;
+  } catch (e) { banner('无法读取统计：' + e.message); }
+}
+
+async function loadTraces() {
+  try {
+    const list = await api('/api/traces?limit=50');
+    const tbody = $('#traces');
+    if (!list.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="sub">暂无调用记录，先在上方提个问。</td></tr>';
+      return;
+    }
+    tbody.innerHTML = list.map(t => `
+      <tr data-id="${esc(t.traceId)}">
+        <td>${fmtTime(t.timestamp)}</td>
+        <td class="mono">${esc(t.model || '—')}</td>
+        <td>${esc(t.promptId || '—')}</td>
+        <td class="mono">${t.promptTokens ?? '—'}/${t.completionTokens ?? '—'}</td>
+        <td class="mono cost">${money(t.cost)}</td>
+        <td class="mono">${t.latencyMs}ms</td>
+        <td>${t.status === 'ok'
+              ? '<span class="badge green">ok</span>'
+              : '<span class="badge amber">' + esc(t.status) + '</span>'}</td>
+      </tr>`).join('');
+    tbody.querySelectorAll('tr').forEach(tr =>
+      tr.addEventListener('click', () => showTrace(tr.dataset.id)));
+  } catch (e) { banner('无法读取调用记录：' + e.message); }
+}
+
+async function showTrace(id) {
+  try {
+    const t = await api('/api/traces/' + encodeURIComponent(id));
+    $('#td-title').textContent = `调用 ${t.traceId} · ${t.model || ''}`;
+    $('#td-body').innerHTML = `
+      <p>
+        <span class="badge">${esc(t.promptId || 'chat')}</span>
+        <span class="badge muted">${esc(t.preset || '')}</span>
+        <span class="badge muted">${t.totalTokens ?? '—'} tokens</span>
+        <span class="badge muted cost">${money(t.cost)}</span>
+        <span class="badge muted">${t.latencyMs}ms</span>
+      </p>
+      <h6>变量</h6>
+      <pre class="full mono">${esc(JSON.stringify(t.variables, null, 2))}</pre>
+      <h6>Prompt 全文</h6>
+      <pre class="full mono">${esc(t.renderedPrompt)}</pre>
+      <h6>返回正文（含原始 &lt;think&gt; 块，业务接口会剥离）</h6>
+      <pre class="full mono">${esc(t.response)}</pre>`;
+    $('#trace-dialog').showModal();
+  } catch (e) { banner('无法读取调用详情：' + e.message); }
+}
+
+async function clearTraces() {
+  if (!confirm('清空所有调用记录？')) return;
+  try { await api('/api/traces', { method: 'DELETE' }); refreshObservability(); }
+  catch (e) { banner('清空失败：' + e.message); }
+}
+
+function refreshObservability() { loadStats(); loadTraces(); }
+
+// ---------- ③ providers ----------
+async function loadProviders() {
+  try {
+    const data = await api('/api/providers');
+    $('#active-preset').textContent = `chat = ${data.activeChat || '?'} · embedding = ${data.activeEmbedding || '?'}`;
+    $('#providers').innerHTML = data.presets.map(p => {
+      const roles = [];
+      if (p.activeAsChat) roles.push('<span class="badge green">chat</span>');
+      if (p.activeAsEmbedding) roles.push('<span class="badge green">embedding</span>');
+      return `<tr>
+        <td><strong>${esc(p.name)}</strong></td>
+        <td class="mono">${esc(p.chatModel || '—')}</td>
+        <td class="mono">${esc(p.embeddingModel || '—')}</td>
+        <td class="mono sub">${esc(p.baseUrl || '')}</td>
+        <td>${roles.join(' ') || '<span class="badge muted">备选</span>'}</td>
+      </tr>`;
+    }).join('');
+  } catch (e) {
+    $('#active-preset').textContent = '（服务未就绪）';
+    banner('后端未就绪或未配置 key：' + e.message);
+  }
+}
+
+// ---------- 事件绑定 ----------
+$('#btn-ask').addEventListener('click', ask);
+$('#btn-compare').addEventListener('click', compare);
+$('#btn-refresh').addEventListener('click', refreshObservability);
+$('#btn-clear').addEventListener('click', clearTraces);
+$('#question').addEventListener('keydown', (e) => { if (e.key === 'Enter') ask(); });
+$('#td-close').addEventListener('click', (e) => { e.preventDefault(); $('#trace-dialog').close(); });
+
+// ---------- 初始化 ----------
+loadPrompts();
+loadProviders();
+refreshObservability();
+</script>
+</body>
+</html>

@@ -21,6 +21,7 @@
 - 🌍 **多环境配置**：dev / prod profile 自动切换 prompt 版本（灰度发布的最朴素实现）
 - 🐳 **生产级 Docker**：multi-stage 构建、非 root 用户、健康检查、Maven 缓存层
 - 📊 **可观测性**：每次 LLM 调用的 prompt 全文 + 变量 + token + 折算成本 + 耗时全程留痕，`/api/traces` 可查、可聚合
+- 🖥️ **演示控制台**：零构建静态单页（`http://localhost:8080/`），RAG 问答 + Prompt v1/v2 对比 + 可观测性面板 + preset 一页看全
 
 ## 这不是什么
 
@@ -74,6 +75,8 @@ curl http://localhost:8080/api/traces          # 最近调用摘要列表
 # 取某条 traceId 看 prompt 全文 + 返回正文
 curl http://localhost:8080/api/traces/<traceId>
 ```
+
+> 🖥️ 不想敲 curl？直接浏览器打开 **<http://localhost:8080/>** —— 自带的工程化演示控制台，RAG 问答、Prompt v1/v2 并排对比、调用 token/成本面板、厂商 preset 一页看全。零构建、纯静态页（`src/main/resources/static/index.html`），由 Spring Boot 直接托管。
 
 ### 切换 chat / embedding 厂商
 
