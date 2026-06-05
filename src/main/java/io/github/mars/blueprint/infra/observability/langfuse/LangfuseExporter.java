@@ -1,5 +1,7 @@
 package io.github.mars.blueprint.infra.observability.langfuse;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.mars.blueprint.infra.observability.LlmCallTrace;
 import io.github.mars.blueprint.infra.observability.TraceSink;
 import org.slf4j.Logger;
@@ -9,6 +11,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -37,6 +40,7 @@ public class LangfuseExporter implements TraceSink {
     private final LangfuseProperties props;
     private final RestClient client;
     private final ExecutorService executor;
+    private final ObjectMapper objectMapper = new ObjectMapper();
     private final boolean ready;
 
     public LangfuseExporter(LangfuseProperties props) {
@@ -70,16 +74,38 @@ public class LangfuseExporter implements TraceSink {
         }
         executor.submit(() -> {
             try {
-                client.post()
+                // ingestion 即便整体 2xx，也可能在 207 响应体的 errors[] 里逐条拒绝；这里读回 body 检查
+                String body = client.post()
                         .uri(INGESTION_PATH)
                         .contentType(MediaType.APPLICATION_JSON)
                         .body(buildIngestionBatch(trace))
                         .retrieve()
-                        .toBodilessEntity();
+                        .body(String.class);
+                logPartialFailures(trace.traceId(), body);
+            } catch (RestClientResponseException e) {
+                // 4xx/5xx：带状态码与响应体，401=key 错、403=host/区域不符，最常见
+                log.warn("Langfuse 推送失败 [{}]: HTTP {} {}", trace.traceId(),
+                        e.getStatusCode().value(), e.getResponseBodyAsString());
             } catch (RuntimeException e) {
+                // 连接超时、DNS、host 配错等网络层失败
                 log.warn("Langfuse 推送失败 [{}]: {}", trace.traceId(), e.toString());
             }
         });
+    }
+
+    /** Langfuse ingestion 对部分事件失败仍返回 207 + {@code errors[]}，整体不报错，需主动解析。 */
+    private void logPartialFailures(String traceId, String body) {
+        if (body == null || body.isBlank()) {
+            return;
+        }
+        try {
+            JsonNode errors = objectMapper.readTree(body).path("errors");
+            if (errors.isArray() && !errors.isEmpty()) {
+                log.warn("Langfuse 部分事件被拒 [{}]: {}", traceId, errors);
+            }
+        } catch (Exception e) {
+            log.debug("Langfuse 响应体解析失败 [{}]: {}", traceId, e.toString());
+        }
     }
 
     /**
